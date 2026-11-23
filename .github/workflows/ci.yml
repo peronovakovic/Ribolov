@@ -1,0 +1,83 @@
+name: Verify architecture
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_DB: ribolov
+          POSTGRES_USER: ribolov_owner
+          POSTGRES_PASSWORD: ci-owner-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ribolov_owner -d ribolov"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      IT_DATABASE_URL: jdbc:postgresql://localhost:5432/ribolov
+      IT_MIGRATION_USERNAME: ribolov_owner
+      IT_MIGRATION_PASSWORD: ci-owner-password
+      IT_DATABASE_USERNAME: ribolov_app
+      IT_DATABASE_PASSWORD: ci-app-password
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Initialize separate database accounts
+        env:
+          PGHOST: localhost
+          PGPASSWORD: ci-owner-password
+          POSTGRES_USER: ribolov_owner
+          POSTGRES_DB: ribolov
+          RIBOLOV_APP_PASSWORD: ci-app-password
+          KEYCLOAK_DB_PASSWORD: ci-keycloak-password
+        run: bash infra/postgres/init.sh
+      - name: Validate development infrastructure
+        run: docker compose --env-file .env.example -f infra/compose.yml config --quiet
+      - name: Verify modules, security and PostgreSQL migrations
+        run: mvn --batch-mode --no-transfer-progress -Ppostgres-it verify
+  frontend:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: mobile/android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: bash ./gradlew --no-daemon testDebugUnitTest assembleDebug

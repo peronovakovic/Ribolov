@@ -1,0 +1,12 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:ribolov;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+  flyway:
+    enabled: false
+ribolov:
+  web-url: http://localhost:5173/
+  security:
+    issuer: https://identity.example.test
+    web-client-secret: test-only

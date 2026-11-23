@@ -1,0 +1,81 @@
+openapi: 3.1.0
+info:
+  title: Ribolov API
+  version: 0.1.0
+  description: Početni ugovor autentifikacije. Poslovni endpointi nisu izloženi.
+servers:
+  - url: http://localhost:8080
+paths:
+  /api/v1/session:
+    get:
+      operationId: getWebSession
+      security:
+        - webSession: []
+      responses:
+        '200':
+          description: Prijavljeni korisnik bez poslovnih ovlaštenja
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '401':
+          description: Prijava je potrebna
+  /api/mobile/v1/session:
+    get:
+      operationId: getMobileSession
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Identitet potvrđen bearer tokenom
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '401':
+          description: Token nedostaje ili nije prihvatljiv
+  /api/v1/csrf:
+    get:
+      operationId: getCsrfToken
+      security: []
+      responses:
+        '200':
+          description: CSRF token za serversku sesiju
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [parameterName, token]
+                properties:
+                  parameterName:
+                    type: string
+                  token:
+                    type: string
+  /actuator/health/liveness:
+    get:
+      operationId: getLiveness
+      security: []
+      responses:
+        '200':
+          description: Proces je aktivan
+        '503':
+          description: Proces nije spreman za rad
+components:
+  securitySchemes:
+    webSession:
+      type: apiKey
+      in: cookie
+      name: JSESSIONID
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Session:
+      type: object
+      required: [subject, displayName]
+      properties:
+        subject:
+          type: string
+        displayName:
+          type: [string, 'null']

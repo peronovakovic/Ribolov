@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Ribolov</string>
+    <string name="field_service">Ribočuvarska služba</string>
+    <string name="preparation">Prije odlaska na teren potrebni su prijava i preuzimanje ovlaštenih podataka.</string>
+    <string name="not_ready">Provjera dozvola nije dostupna dok se uređaj ne registruje i sinhronizuje.</string>
+</resources>

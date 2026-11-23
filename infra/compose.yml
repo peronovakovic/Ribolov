@@ -1,0 +1,42 @@
+name: ribolov
+services:
+  postgres:
+    image: postgis/postgis:17-3.5
+    environment:
+      POSTGRES_DB: ribolov
+      POSTGRES_USER: ribolov_owner
+      POSTGRES_PASSWORD: ${POSTGRES_OWNER_PASSWORD:?Copy .env.example to .env}
+      RIBOLOV_APP_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?Set KEYCLOAK_DB_PASSWORD}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init.sh:/docker-entrypoint-initdb.d/20-ribolov.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ribolov_owner -d ribolov"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak_owner
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?Set KEYCLOAK_DB_PASSWORD}
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?Set KEYCLOAK_ADMIN_PASSWORD}
+      KC_HOSTNAME: http://localhost:8180
+      KC_HTTP_ENABLED: "true"
+      RIBOLOV_WEB_CLIENT_SECRET: ${OIDC_WEB_SECRET:?Set OIDC_WEB_SECRET}
+    ports:
+      - "127.0.0.1:8180:8080"
+    volumes:
+      - ./keycloak/realm.json:/opt/keycloak/data/import/ribolov-realm.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+volumes:
+  postgres-data:
