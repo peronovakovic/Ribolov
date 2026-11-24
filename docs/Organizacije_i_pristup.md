@@ -78,10 +78,10 @@ Web prikazuje aktivnu ulogu, organizacije, korisnike, dodjele i historiju promje
 
 ## Provjera i preostali posao
 
-Prošlo je 54 backend testa: 37 bez PostgreSQL-a i 17 na stvarnom PostgreSQL-u 15.1. Pokriveni su mapiranje, hijerarhija, historija, verzije, transakcijski rollback audita, dozvoljene i zabranjene dodjele, MFA, CSRF i izolacija dva udruženja čak i kada isti korisnik ima administratorsku ulogu u oba. Jednokratni bootstrap je provjeren zajedno s odbijanjem ponovnog pokretanja.
+U CI provjeri 24.11.2026. prošlo je 55 backend testova: 38 bez PostgreSQL-a i 17 na stvarnom PostgreSQL-u 17.5. Pokriveni su mapiranje, hijerarhija, historija, verzije, transakcijski rollback audita, dozvoljene i zabranjene dodjele, MFA, CSRF i izolacija dva udruženja čak i kada isti korisnik ima administratorsku ulogu u oba. Jednokratni bootstrap je provjeren zajedno s odbijanjem ponovnog pokretanja.
 
 TypeScript provjera i produkcijski web build prolaze. Browser test u `frontend/tests/admin-ui.mjs` koristi kontrolisane API odgovore za provjeru korisničkih tokova; nije zamjena za integraciju sa stvarnim backendom i Keycloakom. Detaljan rezultat lokalne provjere nalazi se u [razvojnom vodiču](Razvoj.md#zabiljezena-provjera).
 
-Standardni Maven lifecycle nije potvrđen zbog ograničenja zatvaranja javac arhiva u sandboxu; kompilacija je prošla kroz Java Compiler API, a testovi kroz Surefire. CI koristi PostgreSQL 17. Stvarni Keycloak OIDC/OTP tok i Android build ostaju za potpuno razvojno/CI okruženje.
+[CI provjera](https://github.com/peronovakovic/Ribolov/actions/runs/45369955061) potvrdila je puni `mvn -Ppostgres-it verify`, stvarni Keycloak OIDC/OTP tok s obnovom prijave i odjavom te Android unit testove i debug APK. Novi sigurnosni test provjerava stvarno izdati CSRF token i odbija nedostajući ili neispravan token. Lokalno ograničenje javac arhiva ostaje specifično za ograničeni Windows izvršni prostor.
 
-Naredne cjeline su teritorijalna ovlaštenja, arhiviranje uz provjeru obaveza te osobe i članstvo. Pozivni tok iz IAM-06 je implementiran; stvarnu Keycloak integraciju tek treba potvrditi u kompletnom okruženju. Opšti audit, dozvole, naplata i terenske kontrole još nisu završeni.
+Naredne cjeline su teritorijalna ovlaštenja, arhiviranje uz provjeru obaveza te osobe i članstvo. Pozivni tok iz IAM-06 je implementiran, a stvarna Keycloak prijava potvrđena u CI-ju. Samostalna registracija i klik na verifikacijsku e-poruku ostaju zaseban scenarij prihvatanja. Opšti audit, dozvole, naplata i terenske kontrole još nisu završeni.

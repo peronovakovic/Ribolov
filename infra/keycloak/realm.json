@@ -68,6 +68,7 @@
         }
       ],
       "defaultClientScopes": [
+        "basic",
         "profile",
         "email",
         "roles",

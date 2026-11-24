@@ -59,8 +59,13 @@ Za zajedničko okruženje podesiti stvarni SMTP, njegove kredencijale, `SMTP_STA
 Promjena signing ključa ne poništava već poslane veze: njihovi digest-i ostaju važeći do prihvatanja, opoziva ili isteka. Neposlani stari pozivi ne mogu se regenerisati novim ključem, pa dostava prijavljuje neuspjeh. Planirana rotacija zahtijeva završetak ili opoziv tih poziva; nakon kompromitovanja treba opozvati sve pogođene pozive.
 
 ## Keycloak i provjere
+Web klijent mora imati `basic` među podrazumijevanim client scope-ovima. U Keycloaku 26.7 taj scope daje potpisani `auth_time`, kojim backend provjerava starost MFA prijave. Ako je realm već uvezen, otvori **Clients → ribolov-web → Client scopes → Add client scope**, dodaj `basic` kao **Default** i ponovi prijavu. Ponovni import JSON-a ne ažurira postojeći realm. Bez ove postavke prijava može uspjeti, ali administrativni upisi i preuzimanje poziva ispravno ostaju odbijeni.
+
+Izvor: [Keycloak 26.7 definicija basic scope-a](https://github.com/keycloak/keycloak/blob/26.7.0/services/src/main/java/org/keycloak/protocol/oidc/OIDCLoginProtocolFactory.java).
 
 Realm sada dopušta registraciju, zahtijeva potvrdu e-pošte i OTP, a web klijent traži email scope i potpisane email/email_verified tvrdnje. Sama registracija ne daje poslovnu ulogu. Postojeći realm se ne mijenja automatski: primijeni promjene iz `infra/keycloak/realm.json` kroz namjensku administraciju, čuvajući korisnike.
+
+OIDC provjera prvo izvršava četiri brza testa OTP generatora: standardne TOTP primjere, obnovu u istom intervalu, granicu isteka i obnovu u kasnijem intervalu. Browser scenarij dva puta obnavlja prijavu i za svako slanje čeka novi OTP interval. Time test poštuje zaštitu od ponovne upotrebe i ne šalje isti kod ponovo.
 
 `npm run test:oidc` iz `frontend` priprema zaseban slučajno imenovan testni realm, korisnika i OTP, pokreće izgrađeni backend JAR i poslužuje izgrađeni web. Provjerava stvarnu OIDC prijavu, svježe MFA/email tvrdnje, obnovu OTP-a, CSRF, odsustvo automatskih poslovnih uloga i odjavu. Nakon toga uklanja samo realm koji je sam kreirao.
 
@@ -68,6 +73,6 @@ Preduslovi: slobodni portovi 8080/5173, lokalni Keycloak na 8180, izgrađen JAR 
 
 Lokalno je prošlo **54 backend testa**, uključujući **17 na PostgreSQL-u** i dva stvarna SMTP transport testa, te web build i browser scenarij s kontrolisanim API odgovorima. Browser scenarij provjerava pozive, opoziv, explicitno prihvatanje, čuvanje veze kroz ponovno učitavanje, uklanjanje tajne iz URL-a/pohrane i CSRF.
 
-Stvarna Keycloak provjera je pripremljena u CI-ju, ali ovdje nije izvršena: Docker pristup je odbijen, a servis na 8180 nije dostupan. Standardni Maven lifecycle ponovo je zaustavljen na sandbox pristupu javac arhivama; izvor je kompajliran kroz Java Compiler API, testovi su pokrenuti kroz Surefire. CI rezultat tek treba potvrditi nakon slanja izmjena.
+Naknadna [CI provjera od 24.11.2026.](https://github.com/peronovakovic/Ribolov/actions/runs/45369955061) prošla je s **55 backend testova**, punim Maven lifecycle-om, PostgreSQL-om 17.5 i stvarnim Keycloakom 26.7. Potvrđeni su OTP podešavanje, prijava, potpisani MFA/email podaci, obnova prijave, CSRF i odjava. Dodavanje `basic` scope-a ispravilo je nedostajući `auth_time`; sigurnosni zahtjevi nisu ublaženi. Prošli su i web te Android build/testovi.
 
 Izvori konfiguracije: [Keycloak 26.7 administracija](https://www.keycloak.org/docs/26.7.0/server_admin/), [Angus SMTP postavke](https://eclipse-ee4j.github.io/angus-mail/docs/api/org.eclipse.angus.mail/org/eclipse/angus/mail/smtp/package-summary.html), [Mailpit 1.34.0](https://github.com/axllent/mailpit/releases/tag/v1.34.0).

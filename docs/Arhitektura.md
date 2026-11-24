@@ -87,7 +87,7 @@ Postoje dva odvojena sigurnosna lanca:
 
 Dostupni su identitet sesije, pregled vlastitih aktivnih ovlaštenja, CSRF token, administracija organizacija/korisnika/uloga i zdravstvene provjere. Administrativne rute zahtijevaju tačno jednu aktivnu dodjelu i MFA, a upis i prijavu ne stariju od pet minuta. Ostale poslovne rute imaju `denyAll` dok se ne uvedu ovlaštenja. Prijavljen korisnik ne dobija automatski pravo pristupa članovima ili dozvolama.
 
-Web sesije su trenutno u memoriji jednog procesa. Prije više backend instanci potreban je zajednički session store, npr. Spring Session JDBC, uz definisanu politiku opoziva. Razvojni realm sadrži MFA tok; postojeći realm treba namjenski ažurirati. Stvarnu OIDC/OTP integraciju još treba potvrditi na pokrenutoj infrastrukturi.
+Web sesije su trenutno u memoriji jednog procesa. Prije više backend instanci potreban je zajednički session store, npr. Spring Session JDBC, uz definisanu politiku opoziva. Razvojni realm sadrži MFA tok; postojeći realm treba namjenski ažurirati. Stvarna OIDC/OTP integracija, obnova prijave i odjava potvrđene su u [CI provjeri od 24.11.2026.](https://github.com/peronovakovic/Ribolov/actions/runs/45369955061). Web klijent mora imati podrazumijevani `basic` scope za potpisani `auth_time`.
 
 ## Baza i migracije
 
