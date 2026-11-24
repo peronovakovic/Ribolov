@@ -147,7 +147,7 @@ Prije povezivanja emulatora treba urediti dostupan HTTPS OIDC issuer i backend a
 
 ## Zabilježena provjera
 
-[GitHub Actions provjera od 24.11.2026.](https://github.com/peronovakovic/Ribolov/actions/runs/45369955061), commit `a0c7fbb`:
+[GitHub Actions provjere za PR #1](https://github.com/peronovakovic/Ribolov/pull/1/checks), 24.11.2026.:
 
 | Provjera | Rezultat |
 | --- | --- |
@@ -156,6 +156,7 @@ Prije povezivanja emulatora treba urediti dostupan HTTPS OIDC issuer i backend a
 | Vue/TypeScript i produkcijski bundle | Prošlo |
 | Browser administrativni scenarij | Prošlo: konteksti, organizacije, pozivi, prihvatanje, CSRF, konflikti, istek MFA i mobilni prikaz |
 | Stvarni OIDC/OTP tok | Prošlo na Keycloaku 26.7: OTP podešavanje, prijava, svježi potpisani MFA/email podaci, obnova, CSRF, odsustvo automatskih uloga i odjava |
+| OTP testni generator | Prošla četiri regresijska testa; obnova čeka novi interval i izbjegava kod pred istekom |
 | Android | Prošli `testDebugUnitTest` i `assembleDebug` |
 | Compose konfiguracija | Prošlo |
 

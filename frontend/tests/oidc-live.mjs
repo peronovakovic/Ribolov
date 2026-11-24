@@ -4,7 +4,8 @@ import { createServer, request } from 'node:http'
 import { readFile, mkdir, open } from 'node:fs/promises'
 import { resolve, dirname, extname, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { randomBytes, createHmac } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
+import { createOtpGenerator } from './support/otp.mjs'
 import { spawn } from 'node:child_process'
 
 // Creates only a uniquely named test realm. Requires an isolated development/CI database.
@@ -30,14 +31,7 @@ async function kc(path,method='GET',body){
  assert.ok(r.ok,'Keycloak administration failed: '+method+' '+path+' ('+r.status+')')
  return r
 }
-function totp(secret){
- const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
- const bits=[...secret.toUpperCase().replace(/\s|=/g,'')].map(c=>{assert.ok(alphabet.includes(c));return alphabet.indexOf(c).toString(2).padStart(5,'0')}).join('')
- const bytes=Buffer.from((bits.match(/.{8}/g)??[]).map(b=>parseInt(b,2)))
- const counter=Buffer.alloc(8);counter.writeBigUInt64BE(BigInt(Math.floor(Date.now()/30000)))
- const digest=createHmac('sha1',bytes).update(counter).digest(),offset=digest.at(-1)&15
- return String((digest.readUInt32BE(offset)&0x7fffffff)%1000000).padStart(6,'0')
-}
+const nextOtp = createOtpGenerator()
 async function authenticate(page,renew=false){
  await page.goto('http://localhost:5173/oauth2/authorization/keycloak')
  let submittedOtp=false
@@ -48,7 +42,7 @@ async function authenticate(page,renew=false){
   const secret=page.locator('#kc-totp-secret-key')
   if(await secret.isVisible()){
    otpSecret=await secret.innerText()
-   await page.locator('#totp').fill(totp(otpSecret))
+   await page.locator('#totp').fill(await nextOtp(otpSecret))
    const label=page.locator('#userLabel');if(await label.isVisible())await label.fill('CI authenticator')
    await page.locator('input[type=submit], button[type=submit]').first().click()
    submittedOtp=true
@@ -57,14 +51,14 @@ async function authenticate(page,renew=false){
    await page.locator('#kc-login').click()
   }else if(await page.locator('#otp').isVisible()){
    assert.ok(otpSecret,'OTP setup must have completed')
-   await page.locator('#otp').fill(totp(otpSecret));await page.locator('#kc-login').click();submittedOtp=true
+   await page.locator('#otp').fill(await nextOtp(otpSecret));await page.locator('#kc-login').click();submittedOtp=true
   }else if(await page.locator('#mode-manual').isVisible()){
    await page.locator('#mode-manual').click()
   }else if(await page.getByRole('link',{name:/Unable to scan/i}).isVisible()){
    await page.getByRole('link',{name:/Unable to scan/i}).click()
   }else await page.waitForTimeout(300)
  }
- throw new Error('OIDC login did not complete')
+ throw new Error('OIDC '+(renew?'renewal':'login')+' did not complete')
 }
 async function assertSession(page){
  const result=await page.evaluate(async()=>{
@@ -121,7 +115,7 @@ try{
  browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH})
  const page=await browser.newPage()
  await authenticate(page);await assertSession(page)
- await authenticate(page,true);await assertSession(page)
+ for(let renewal=0;renewal<2;renewal++){await authenticate(page,true);await assertSession(page)}
  await page.getByRole('button',{name:'Odjava',exact:true}).click()
  await page.getByRole('link',{name:'Prijavite se',exact:true}).waitFor()
  assert.equal(await page.evaluate(async()=> (await fetch('/api/v1/session')).status),401)

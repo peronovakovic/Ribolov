@@ -12,7 +12,7 @@
     "typecheck": "vue-tsc --noEmit",
     "preview": "vite preview --configLoader native --host 127.0.0.1",
     "test:ui": "node tests/admin-ui.mjs",
-    "test:oidc": "node tests/oidc-live.mjs"
+    "test:oidc": "node --test tests/otp.test.mjs && node tests/oidc-live.mjs"
   },
   "dependencies": {
     "vue": "3.5.42"

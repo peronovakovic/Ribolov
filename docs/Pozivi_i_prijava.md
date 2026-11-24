@@ -65,6 +65,8 @@ Izvor: [Keycloak 26.7 definicija basic scope-a](https://github.com/keycloak/keyc
 
 Realm sada dopušta registraciju, zahtijeva potvrdu e-pošte i OTP, a web klijent traži email scope i potpisane email/email_verified tvrdnje. Sama registracija ne daje poslovnu ulogu. Postojeći realm se ne mijenja automatski: primijeni promjene iz `infra/keycloak/realm.json` kroz namjensku administraciju, čuvajući korisnike.
 
+OIDC provjera prvo izvršava četiri brza testa OTP generatora: standardne TOTP primjere, obnovu u istom intervalu, granicu isteka i obnovu u kasnijem intervalu. Browser scenarij dva puta obnavlja prijavu i za svako slanje čeka novi OTP interval. Time test poštuje zaštitu od ponovne upotrebe i ne šalje isti kod ponovo.
+
 `npm run test:oidc` iz `frontend` priprema zaseban slučajno imenovan testni realm, korisnika i OTP, pokreće izgrađeni backend JAR i poslužuje izgrađeni web. Provjerava stvarnu OIDC prijavu, svježe MFA/email tvrdnje, obnovu OTP-a, CSRF, odsustvo automatskih poslovnih uloga i odjavu. Nakon toga uklanja samo realm koji je sam kreirao.
 
 Preduslovi: slobodni portovi 8080/5173, lokalni Keycloak na 8180, izgrađen JAR i `frontend/dist`, instaliran Playwright Chromium te zasebna testna baza. Postavi `IT_DATABASE_URL`, `IT_DATABASE_USERNAME`, `IT_DATABASE_PASSWORD`, `IT_MIGRATION_USERNAME`, `IT_MIGRATION_PASSWORD` i `TEST_KEYCLOAK_ADMIN_PASSWORD`; opcionalno `TEST_KEYCLOAK_ADMIN_USERNAME`. CI ih postavlja nad izolovanim servisima. Testni korisnik ima unaprijed potvrđenu adresu; potpuni tok samostalne registracije i klika na Keycloak verifikacijsku poruku treba dodatno potvrditi ručno.
