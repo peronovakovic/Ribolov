@@ -28,6 +28,29 @@ class SecurityTests {
     }
 
     @Test
+    void issuedCsrfTokenWorksWithSignedClaimsAndInvalidTokensAreRejected() throws Exception {
+        var session = new org.springframework.mock.web.MockHttpSession();
+        var identity = oidcLogin().idToken(token -> token.subject("csrf-recipient")
+                .claim("iss", "https://identity.example.test").claim("acr", "2")
+                .claim("auth_time", java.time.Instant.now()).claim("email", "recipient@example.test")
+                .claim("email_verified", true));
+        var response = mvc.perform(get("/api/v1/csrf").session(session).with(identity))
+                .andExpect(status().isOk()).andReturn().getResponse();
+        var csrf = tools.jackson.databind.json.JsonMapper.builder().build().readTree(response.getContentAsString());
+        var header = csrf.get("headerName").asString();
+        var value = csrf.get("token").asString();
+        mvc.perform(post("/api/v1/invitations/preview").session(session).with(identity)
+                .contentType("application/json").content("{\"token\":\"invalid\"}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/invitations/preview").session(session).with(identity).header(header, "invalid")
+                .contentType("application/json").content("{\"token\":\"invalid\"}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/invitations/preview").session(session).with(identity).header(header, value)
+                .contentType("application/json").content("{\"token\":\"invalid\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void invitationsRequireAuthenticationAndCsrfAndDirectGrantRoutesAreClosed() throws Exception {
         mvc.perform(post("/api/v1/invitations/accept").with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf())
                 .contentType("application/json").content("{\"token\":\"invalid\"}")).andExpect(status().isUnauthorized());

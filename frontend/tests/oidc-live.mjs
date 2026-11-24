@@ -73,12 +73,14 @@ async function assertSession(page){
   const csrf=await fetch('/api/v1/csrf').then(r=>r.json())
   const without=await fetch('/api/v1/invitations/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:'invalid'})})
   const withToken=await fetch('/api/v1/invitations/preview',{method:'POST',headers:{'Content-Type':'application/json',[csrf.headerName]:csrf.token},body:JSON.stringify({token:'invalid'})})
-  return {session,contexts,without:without.status,withToken:withToken.status}
+  const problem=await withToken.json().catch(()=>({}))
+  return {session,contexts,without:without.status,withToken:withToken.status,
+   denial:{status:problem.status,detail:problem.detail,reauthenticate:problem.reauthenticate}}
  })
  assert.ok(result.session.subject)
  assert.deepEqual(result.contexts,[],'First login does not grant business roles')
  assert.equal(result.without,403,'CSRF remains required')
- assert.equal(result.withToken,400,'Signed ID token must contain fresh MFA and verified email before token validation')
+ assert.equal(result.withToken,400,'Signed ID token must contain fresh MFA and verified email before token validation: '+JSON.stringify(result.denial))
 }
 try{
  await waitFor(keycloak+'/realms/master/.well-known/openid-configuration')
