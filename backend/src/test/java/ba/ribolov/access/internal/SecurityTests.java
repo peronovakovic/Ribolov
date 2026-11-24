@@ -17,6 +17,65 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 class SecurityTests {
     @Autowired MockMvc mvc;
+    @Autowired jakarta.persistence.EntityManager entityManager;
+
+    @Test
+    void authorizationRequestRequiresMfaFreshLoginAndVerifiedEmailScope() throws Exception {
+        var response=mvc.perform(get("/oauth2/authorization/keycloak")).andExpect(status().is3xxRedirection()).andReturn().getResponse();
+        var query=java.net.URLDecoder.decode(java.net.URI.create(response.getRedirectedUrl()).getRawQuery(),java.nio.charset.StandardCharsets.UTF_8);
+        org.assertj.core.api.Assertions.assertThat(query).contains("acr_values=2","max_age=300","email","openid");
+        org.assertj.core.api.Assertions.assertThat(query).contains("\"essential\":true","\"values\":[\"2\"]");
+    }
+
+    @Test
+    void invitationsRequireAuthenticationAndCsrfAndDirectGrantRoutesAreClosed() throws Exception {
+        mvc.perform(post("/api/v1/invitations/accept").with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf())
+                .contentType("application/json").content("{\"token\":\"invalid\"}")).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/v1/invitations/accept").with(oidcLogin()).contentType("application/json").content("{\"token\":\"invalid\"}"))
+                .andExpect(status().isForbidden());
+        for(String path:java.util.List.of("/api/v1/admin/users","/api/v1/admin/roles")){
+            mvc.perform(post(path).with(oidcLogin()).with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf())
+                    .contentType("application/json").content("{}")).andExpect(status().isMethodNotAllowed());
+        }
+    }
+
+
+    @Test
+    void accessContextsRequireAuthenticationAndDoNotTrustIdentityProviderRoleClaims() throws Exception {
+        mvc.perform(get("/api/v1/access-contexts")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/mobile/v1/access-contexts")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/access-contexts").with(oidcLogin().idToken(token ->
+                        token.subject("unknown").claim("iss", "https://identity.example.test").claim("roles", java.util.List.of("SYSTEM_ADMIN")))))
+                .andExpect(status().isOk()).andExpect(content().json("[]"))
+                .andExpect(header().string("Cache-Control", "no-store"));
+        mvc.perform(get("/api/mobile/v1/access-contexts").with(jwt().jwt(token ->
+                        token.issuer("https://identity.example.test").subject("unknown"))))
+                .andExpect(status().isOk()).andExpect(content().json("[]"));
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    void contextEndpointsTakeIdentityFromAuthenticationAndRejectAnotherUsersContext() throws Exception {
+        var organization = new ba.ribolov.organizations.model.Organization("Testno udruženje",
+                ba.ribolov.organizations.model.OrganizationType.ASSOCIATION, null, null);
+        var user = new ba.ribolov.access.internal.domain.ApplicationUser("https://identity.example.test", "context-owner");
+        var assignment = new ba.ribolov.access.internal.domain.RoleAssignment(user,
+                ba.ribolov.access.api.Role.OPERATOR, organization, java.time.Instant.now().minusSeconds(60), null);
+        entityManager.persist(organization);
+        entityManager.persist(user);
+        entityManager.persist(assignment);
+        entityManager.flush();
+        var stranger = oidcLogin().idToken(token -> token.subject("stranger").claim("iss", "https://identity.example.test"));
+        mvc.perform(get("/api/v1/access-contexts").param("subject", "context-owner").with(stranger))
+                .andExpect(status().isOk()).andExpect(content().json("[]"));
+        mvc.perform(get("/api/v1/access-contexts/" + assignment.getId()).with(stranger))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/access-contexts/" + assignment.getId()).with(oidcLogin().idToken(token ->
+                        token.subject("context-owner").claim("iss", "https://identity.example.test"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.organization.id").value(organization.getId().toString()))
+                .andExpect(jsonPath("$.user").doesNotExist());
+    }
 
     @Test
     void anonymousApiRequestsAreUnauthorizedRatherThanRedirected() throws Exception {

@@ -1,0 +1,5 @@
+package ba.ribolov.access.api;
+
+public enum Role {
+    SYSTEM_ADMIN, MINISTRY_ANALYST, FEDERATION_ANALYST, ASSOCIATION_ADMIN, OPERATOR, WARDEN, ANGLER
+}

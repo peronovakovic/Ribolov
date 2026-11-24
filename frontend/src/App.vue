@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onBeforeUnmount, ref } from 'vue'
+import InvitationAcceptance from './components/InvitationAcceptance.vue'
+import { captureInvitation } from './shared/api/invitations'
+import AdminWorkspace from './components/admin/AdminWorkspace.vue'
 import { loadSession, logout } from './shared/api/session'
 import type { SessionView } from './shared/api/session'
 
+const invitationToken = ref(captureInvitation())
+function invitationFinished() { invitationToken.value = ''; void refresh() }
 const session = ref<SessionView | null>(null)
 const loading = ref(true)
 const error = ref('')
@@ -19,7 +24,9 @@ async function signOut() {
   try { await logout() }
   catch (cause) { error.value = cause instanceof Error ? cause.message : 'Odjava nije uspjela.' }
 }
-onMounted(refresh)
+function invitationLinkChanged() { invitationToken.value = captureInvitation() }
+onMounted(() => { window.addEventListener('hashchange', invitationLinkChanged); void refresh() })
+onBeforeUnmount(() => window.removeEventListener('hashchange', invitationLinkChanged))
 </script>
 
 <template>
@@ -38,9 +45,11 @@ onMounted(refresh)
       </div>
       <section v-else-if="session" aria-label="Korisnički pristup" class="notice">
         <p>Prijavljeni ste{{ session.displayName ? ' kao ' + session.displayName : '' }}.</p>
-        <p>Poslovne funkcije portala bit će dostupne nakon aktiviranja odgovarajućih ovlaštenja.</p>
+        <p>Izaberite ulogu za pristup dostupnim evidencijama.</p>
       </section>
       <a v-else class="primary" href="/oauth2/authorization/keycloak">Prijavite se</a>
+      <InvitationAcceptance v-if="invitationToken && !loading" :token="invitationToken" :signed-in="!!session" @finished="invitationFinished" />
+      <AdminWorkspace v-if="session && !loading && !error && !invitationToken" />
       <div class="areas" aria-label="Oblasti portala">
         <article><span>01</span><h2>Članstvo</h2><p>Evidencija članstva i članske kartice.</p></article>
         <article><span>02</span><h2>Dozvole</h2><p>Zahtjevi i pregled ribolovnih dozvola.</p></article>

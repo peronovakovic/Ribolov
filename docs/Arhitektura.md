@@ -27,7 +27,7 @@ S3 i šifrirana mobilna pohrana prikazuju ciljnu arhitekturu; adapteri još nisu
 | Dio | Odabir |
 | --- | --- |
 | Backend | Java 21; Spring Boot 4.1.0; Spring Modulith 2.1.0 |
-| Podaci | PostgreSQL 17 / PostGIS 3.5; Flyway; JDBC |
+| Podaci | PostgreSQL 17 / PostGIS 3.5; Flyway; JPA/Hibernate |
 | Web | Vue 3.5; TypeScript 5.9; Vite 8.3 |
 | Identitet | Keycloak 26.7, OIDC |
 | Android | Kotlin 2.1.21; Compose; AGP 8.9.2; Gradle 8.11.1; min SDK 28, target/compile SDK 35 |
@@ -39,7 +39,8 @@ Tačne verzije su u Maven/Gradle konfiguraciji, `frontend/package-lock.json` i C
 
 | Modul / šema | Vlasništvo nad podacima i pravilima |
 | --- | --- |
-| `access` | Organizacije, korisnički pristup, teritorijalna ovlaštenja i veze na OIDC identitete |
+| `organizations` | Organizacije, kontakti i vremenska historija hijerarhije |
+| `access` | Korisnički pristup, dodjele uloga, buduća teritorijalna ovlaštenja i veze na OIDC identitete |
 | `people` | Jedinstvena osoba i pravila povezivanja/duplikata |
 | `membership` | Članstvo osobe u organizaciji i sezoni |
 | `waters` | Ribolovna područja, vode, prostorne granice i režimi |
@@ -48,12 +49,12 @@ Tačne verzije su u Maven/Gradle konfiguraciji, `frontend/package-lock.json` i C
 | `fieldwork` | Terenske kontrole, offline paketi i prijem sinhronizacije |
 | `reporting` | Izvještajni upiti i projekcije s ograničenjem pristupa |
 | `documents` | Metapodaci priloga i pristup privatnim objektima |
-| `notifications` | Asinhrona obavještenja i pokušaji dostave |
+| `notifications` | SMTP transport; ostala asinhrona obavještenja tek slijede |
 | `audit` | Evidencija poslovnih i sigurnosnih promjena |
 
-Trenutno su deklarisane granice svih 11 modula i njihove šeme. `access` sadrži početnu autentikaciju. Ostali moduli još nemaju poslovne servise, tabele ili ekrane.
+Postoji 12 modula. `organizations` i `access` sadrže JPA entitete, migracije, pregled vlastitih ovlaštenja i administrativne API/web tokove s auditom. Detalji i granice ovog koraka su u [Organizacije i pristup](Organizacije_i_pristup.md). Modul notifications pruža SMTP transport; red poziva i retry podaci ostaju u vlasništvu access modula. Ostali moduli još nemaju domenske tabele ili ekrane.
 
-Svaki modul ima izloženi paket `api`. Pri dodavanju funkcionalnosti struktura je:
+Moduli izlažu DTO-ove i servisne ugovore kroz named interface `api`. Za stvarne međumodulske JPA veze organizacije izlažu `organizations :: model`; to ne otvara pravo tuđeg upisa. Pri dodavanju funkcionalnosti struktura je:
 
 ```text
 ba.ribolov.<modul>
@@ -61,7 +62,7 @@ ba.ribolov.<modul>
 └── internal/
     ├── application/      slučajevi upotrebe i transakcije
     ├── domain/           poslovna pravila
-    ├── infrastructure/   JDBC, vanjski servisi i pohrana
+    ├── infrastructure/   JPA repozitoriji, vanjski servisi i pohrana
     └── web/              HTTP adapteri
 ```
 
@@ -69,26 +70,28 @@ Prazne slojeve ne dodajemo unaprijed. Postojeći mali sigurnosni adapteri nalaze
 
 Pravila razvoja:
 
-1. Modul pristupa drugom modulu preko njegovog `api` ugovora. Ne koristi tuđi repozitorij, internu klasu ili SQL tabelu za upis.
-2. Svaka nova zavisnost eksplicitno se dodaje u `@ApplicationModule(allowedDependencies = ...)`, npr. `people :: api`. Početno nema dozvoljenih međumodulskih zavisnosti.
+1. Modul koristi drugi modul preko odobrenog named interface-a (`api`, odnosno `model` za JPA reference). Ne koristi tuđi repozitorij, internu klasu ili SQL tabelu za upis.
+2. Svaka nova zavisnost eksplicitno se dodaje u `@ApplicationModule(allowedDependencies = ...)`, npr. `people :: api`. Postojeće zavisnosti su `access` → `organizations :: model` i `organizations :: api`.
 3. Transakciju započinje aplikacijski slučaj upotrebe. U istoj bazi dozvoljeno je pozvati drugi javni ugovor u istoj transakciji kada poslovni invariant to traži.
-4. Slanje poruka, izrada dokumenata i obavještavanje idu poslije potvrde transakcije preko trajnog outbox-a. Outbox još nije implementiran.
+4. Slanje poruka, izrada dokumenata i obavještavanje idu poslije potvrde transakcije preko trajnog outbox-a. Trajni red poziva je implementiran; opšti outbox drugih slučajeva tek slijedi.
 5. Arhitektonski test provjerava postojanje svih modula, cikluse i neovlaštene zavisnosti. Novi poslovni slučaj dobija test koji provjerava njegovo pravilo, a ne samo strukturu metoda.
 
 ## Identitet i pristup
 
-Keycloak upravlja prijavom, lozinkama i budućom MFA politikom. Backend će upravljati poslovnim ovlaštenjima, organizacijom i teritorijalnim opsegom. OIDC identitet se trajno povezuje preko para `issuer + subject`; email ili prikazano ime nisu identifikatori ovlaštenja.
+Keycloak upravlja prijavom, lozinkama i MFA politikom. Backend upravlja poslovnim ovlaštenjima i organizacionim opsegom; teritorijalni opseg tek slijedi. OIDC identitet se trajno povezuje preko para `issuer + subject`; email ili prikazano ime nisu identifikatori ovlaštenja.
 
 Postoje dva odvojena sigurnosna lanca:
 
 - Web `/api/v1/**`: backend je OIDC klijent; preglednik dobija HttpOnly sesijski kolačić, bez pohrane access/refresh tokena u JavaScriptu. Mutacije zahtijevaju CSRF token. Prijava počinje na `/oauth2/authorization/keycloak`, a odjava je POST `/logout` uz CSRF.
 - Android `/api/mobile/**`: stateless bearer autentikacija; provjeravaju se potpis, issuer, vrijeme važenja i audience `ribolov-api`. CSRF je isključen samo za ovaj lanac. Klijent je public s obaveznim PKCE S256; mobilni login još nije povezan.
 
-Dostupni su samo identitet sesije, CSRF token i zdravstvene provjere. Ostale poslovne rute imaju `denyAll` dok se ne uvedu ovlaštenja. Prijavljen korisnik ne dobija automatski pravo pristupa članovima ili dozvolama.
+Dostupni su identitet sesije, pregled vlastitih aktivnih ovlaštenja, CSRF token, administracija organizacija/korisnika/uloga i zdravstvene provjere. Administrativne rute zahtijevaju tačno jednu aktivnu dodjelu i MFA, a upis i prijavu ne stariju od pet minuta. Ostale poslovne rute imaju `denyAll` dok se ne uvedu ovlaštenja. Prijavljen korisnik ne dobija automatski pravo pristupa članovima ili dozvolama.
 
-Web sesije su trenutno u memoriji jednog procesa. Prije više backend instanci potreban je zajednički session store, npr. Spring Session JDBC, uz definisanu politiku opoziva. MFA za privilegovane korisnike još treba podesiti u Keycloaku.
+Web sesije su trenutno u memoriji jednog procesa. Prije više backend instanci potreban je zajednički session store, npr. Spring Session JDBC, uz definisanu politiku opoziva. Razvojni realm sadrži MFA tok; postojeći realm treba namjenski ažurirati. Stvarnu OIDC/OTP integraciju još treba potvrditi na pokrenutoj infrastrukturi.
 
 ## Baza i migracije
+
+Po zahtjevu korisnika ne uvodimo kolonu `code`. Veze između lokalnih entiteta su JPA relacije sa stranim ključevima; skalarni identifikatori koriste se na DTO/API granici. Odluka je zabilježena u [ADR 0002](adr/0002-jpa-relacije-bez-poslovnih-sifara.md).
 
 `platform` sadrži Flyway historiju, a domenske šeme odgovaraju modulima. Runtime račun `ribolov_app` nema vlasništvo nad šemama, CREATE, superuser ili BYPASSRLS. Migracije koriste zaseban račun. U lokalnom Compose okruženju bootstrap/migration račun `ribolov_owner` ima administratorska prava radi inicijalizacije; produkcijski bootstrap i migrator moraju se razdvojiti.
 
@@ -103,7 +106,7 @@ Pri kreiranju prvih domenskih tabela uvode se:
 - Optimističko zaključavanje promjenjivih zapisa, jedinstveni indeksi i strani ključevi za ključne invariante.
 - Iznosi kao decimalni novčani tipovi s valutom; bez floating-point računanja.
 
-RLS nije implementiran jer domenske tabele još ne postoje. Ne smije se smatrati da odvojene šeme same pružaju izolaciju organizacija.
+RLS je implementiran za pregled vlastitih ovlaštenja i administrativne slučajeve. V003 dodaje upis samo dozvoljenih uloga/organizacija uz svježi MFA kontekst, pregled historije za SYS i audit u opsegu aktivne dodjele. Runtime prava ažuriranja ograničena su na promjenjive kolone; audit se ne može mijenjati ili brisati. Ostale domenske tabele još ne postoje i dobit će zasebne politike uz implementaciju; odvojene šeme same ne pružaju izolaciju.
 
 ## Uplate, dozvole i događaji
 
@@ -111,7 +114,7 @@ Uplata i dozvola imaju različite životne cikluse. Evidentirana uplata nije izd
 
 Ponavljanje zahtjeva mora vratiti isti rezultat; djelimičan kvar ne smije proizvesti duple dozvole ili dvostruko trošenje iste uplate. Potrebni su transakcijski invariant, jedinstveni ključ i zaključavanje relevantnog salda/raspodjele. Korekcije ostavljaju trag; finansijski i audit podaci se ne prepisuju bez historije.
 
-Trajna publikacija događaja/outbox uvodi se s prvim asinhronim slučajem. Retry obrada mora biti idempotentna, s brojem pokušaja i pregledom trajno neuspjelih poruka.
+Pozivi već koriste trajni red u access modulu, uz SMTP adapter u notifications. Opšti outbox poslovnih događaja tek slijedi. Retry obrada mora biti idempotentna, s brojem pokušaja i pregledom trajno neuspjelih poruka.
 
 ## Android i offline rad
 
@@ -135,6 +138,8 @@ Sljedeći koraci su šifrirana Room baza izolovana po nalogu/uređaju, ključevi
 Početni ugovor je u [OpenAPI dokumentu](api/openapi.yaml). Nove poslovne rute koriste verzionisani API, validirane ulaze i strukturisane greške; ne izlažu persistence objekte.
 
 Actuator javno izlaže samo zdravstvene provjere bez detalja. Readiness treba proširiti bazom kada backend počne služiti domenske upite; liveness ostaje nezavisan od vanjskih servisa. Ne treba dodavati identifikacijske podatke, tokene ili sadržaj priloga u logove.
+
+Pozivi i njihova potvrda opisani su u [posebnom dokumentu](Pozivi_i_prijava.md).
 
 Prije produkcije slijede HTTPS i reverse proxy, produkcijska Keycloak konfiguracija/MFA, zaseban migrator, tajne iz odgovarajuće pohrane, ograničenja saobraćaja, backup i provjera povrata, nadzor, privatna objektna pohrana i testovi izolacije organizacija.
 

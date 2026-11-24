@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class PostgresMigrationIT {
-    private static final List<String> MODULES = List.of("access", "people", "membership", "waters",
+    private static final List<String> MODULES = List.of("organizations", "access", "people", "membership", "waters",
             "billing", "permits", "fieldwork", "reporting", "documents", "notifications", "audit");
 
     @Test

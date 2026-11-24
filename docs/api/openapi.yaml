@@ -1,16 +1,17 @@
 openapi: 3.1.0
 info:
   title: Ribolov API
-  version: 0.1.0
-  description: Početni ugovor autentifikacije. Poslovni endpointi nisu izloženi.
+  version: 0.4.0
+  description: Identitet, organizacije, administracija i jednokratni pozivi. Nove uloge se dodjeljuju tek prihvatanjem
+    poziva uz potvrđenu e-poštu i svježi MFA.
 servers:
-  - url: http://localhost:8080
+- url: http://localhost:8080
 paths:
   /api/v1/session:
     get:
       operationId: getWebSession
       security:
-        - webSession: []
+      - webSession: []
       responses:
         '200':
           description: Prijavljeni korisnik bez poslovnih ovlaštenja
@@ -24,7 +25,7 @@ paths:
     get:
       operationId: getMobileSession
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       responses:
         '200':
           description: Identitet potvrđen bearer tokenom
@@ -45,11 +46,16 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [parameterName, token]
+                required:
+                - parameterName
+                - headerName
+                - token
                 properties:
                   parameterName:
                     type: string
                   token:
+                    type: string
+                  headerName:
                     type: string
   /actuator/health/liveness:
     get:
@@ -60,6 +66,910 @@ paths:
           description: Proces je aktivan
         '503':
           description: Proces nije spreman za rad
+  /api/v1/access-contexts:
+    get:
+      operationId: getWebAccessContexts
+      security:
+      - webSession: []
+      responses:
+        '200':
+          description: Samo vlastita aktivna ovlaštenja; nepoznat nalog dobija praznu listu
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AccessContext'
+        '401':
+          description: Prijava je potrebna
+        '403':
+          description: Verifikovani identitet nedostaje
+  /api/mobile/v1/access-contexts:
+    get:
+      operationId: getMobileAccessContexts
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Samo vlastita aktivna ovlaštenja; nepoznat nalog dobija praznu listu
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AccessContext'
+        '401':
+          description: Prijava je potrebna
+        '403':
+          description: Verifikovani identitet nedostaje
+  /api/v1/access-contexts/{id}:
+    get:
+      operationId: getWebAccessContext
+      security:
+      - webSession: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Vlastito aktivno ovlaštenje
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessContext'
+        '400':
+          description: Identifikator nije UUID
+        '401':
+          description: Prijava je potrebna
+        '403':
+          description: Tuđe, nepostojeće, opozvano ili isteklo ovlaštenje
+  /api/v1/admin/organizations:
+    get:
+      operationId: listOrganizations
+      summary: Pregled dostupnih organizacija
+      security:
+      - webSession: []
+      parameters:
+      - $ref: '#/components/parameters/AdminContext'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: Uspješno; DTO, bez keširanja
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationPage'
+        '400':
+          description: Neispravan zahtjev
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Prijava je potrebna
+        '403':
+          description: Nedozvoljen kontekst/radnja, CSRF ili MFA; reauthenticate=true traži novu prijavu
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Zapis nije dostupan
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Zastarjela verzija, preklapanje perioda ili sukob stanja
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      description: MFA acr=2 iz verifikovanog OIDC ID tokena. Samo zapisi u opsegu aktivno izabrane uloge.
+    post:
+      operationId: createOrganization
+      summary: 'SYS: kreiranje organizacije'
+      security:
+      - webSession: []
+      parameters:
+      - $ref: '#/components/parameters/AdminContext'
+      - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrganization'
+      responses:
+        '201':
+          description: Uspješno; DTO, bez keširanja
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '400':
+          description: Neispravan zahtjev
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Prijava je potrebna
+        '403':
+          description: Nedozvoljen kontekst/radnja, CSRF ili MFA; reauthenticate=true traži novu prijavu
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Zapis nije dostupan
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Zastarjela verzija, preklapanje perioda ili sukob stanja
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      description: MFA acr=2 iz verifikovanog OIDC ID tokena. Upis zahtijeva auth_time ne stariji od 5 minuta i
+        obavezan razlog.
+  /api/v1/admin/organizations/{id}:
+    put:
+      operationId: updateOrganization
+      summary: Izmjena naziva i kontakata
+      security:
+      - webSession: []
+      parameters:
+      - $ref: '#/components/parameters/AdminContext'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrganization'
+      responses:
+        '200':
+          description: Uspješno; DTO, bez keširanja
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '400':
+          description: Neispravan zahtjev
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Prijava je potrebna
+        '403':
+          description: Nedozvoljen kontekst/radnja, CSRF ili MFA; reauthenticate=true traži novu prijavu
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Zapis nije dostupan
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Zastarjela verzija, preklapanje perioda ili sukob stanja
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      description: MFA acr=2 iz verifikovanog OIDC ID tokena. Upis zahtijeva auth_time ne stariji od 5 minuta i
+        obavezan razlog.
+  /api/v1/admin/organizations/{id}/parent:
+    post:
+      operationId: changeOrganizationParent
+      summary: 'SYS: promjena pripadnosti uz historiju'
+      security:
+      - webSession: []
+      parameters:
+      - $ref: '#/components/parameters/AdminContext'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeParent'
+      responses:
+        '200':
+          description: Uspješno; DTO, bez keširanja
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '400':
+          description: Neispravan zahtjev
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Prijava je potrebna
+        '403':
+          description: Nedozvoljen kontekst/radnja, CSRF ili MFA; reauthenticate=true traži novu prijavu
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Zapis nije dostupan
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Zastarjela verzija, preklapanje perioda ili sukob stanja
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      description: MFA acr=2 iz verifikovanog OIDC ID tokena. Upis zahtijeva auth_time ne stariji od 5 minuta i
+        obavezan razlog.
+  /api/v1/admin/organizations/{id}/history:
+    get:
+      operationId: getOrganizationHistory
+      summary: 'SYS: historija pripadnosti'
+      security:
+      - webSession: []
+      parameters:
+      - $ref: '#/components/parameters/AdminContext'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Uspješno; DTO, bez keširanja
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 1000
+                items:
+                  $ref: '#/components/schemas/OrganizationAffiliation'
+        '400':
+          description: Neispravan zahtjev
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Prijava je potrebna
+        '403':
+          description: Nedozvoljen kontekst/radnja, CSRF ili MFA; reauthenticate=true traži novu prijavu
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Zapis nije dostupan
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Zastarjela verzija, preklapanje perioda ili sukob stanja
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      description: MFA acr=2 iz verifikovanog OIDC ID tokena. Samo zapisi u opsegu aktivno izabrane uloge.
+  /api/v1/admin/users:
+    get:
+      operationId: listUsers
+      summary: Pregled korisnika u opsegu
+      security:
+      - webSession: []
+      parameters:
+      - $ref: '#/components/parameters/AdminContext'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: Uspješno; DTO, bez keširanja
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPage'
+        '400':
+          description: Neispravan zahtjev
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Prijava je potrebna
+        '403':
+          description: Nedozvoljen kontekst/radnja, CSRF ili MFA; reauthenticate=true traži novu prijavu
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Zapis nije dostupan
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Zastarjela verzija, preklapanje perioda ili sukob stanja
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      description: MFA acr=2 iz verifikovanog OIDC ID tokena. Samo zapisi u opsegu aktivno izabrane uloge.
+  /api/v1/admin/users/{id}:
+    put:
+      operationId: updateUser
+      summary: 'SYS: izmjena imena i aktivnosti naloga'
+      security:
+      - webSession: []
+      parameters:
+      - $ref: '#/components/parameters/AdminContext'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUser'
+      responses:
+        '200':
+          description: Uspješno; DTO, bez keširanja
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Neispravan zahtjev
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Prijava je potrebna
+        '403':
+          description: Nedozvoljen kontekst/radnja, CSRF ili MFA; reauthenticate=true traži novu prijavu
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Zapis nije dostupan
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Zastarjela verzija, preklapanje perioda ili sukob stanja
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      description: MFA acr=2 iz verifikovanog OIDC ID tokena. Upis zahtijeva auth_time ne stariji od 5 minuta i
+        obavezan razlog.
+  /api/v1/admin/roles:
+    get:
+      operationId: listRoleAssignments
+      summary: Pregled dodjela uloga
+      security:
+      - webSession: []
+      parameters:
+      - $ref: '#/components/parameters/AdminContext'
+      - $ref: '#/components/parameters/Page'
+      responses:
+        '200':
+          description: Uspješno; DTO, bez keširanja
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentPage'
+        '400':
+          description: Neispravan zahtjev
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Prijava je potrebna
+        '403':
+          description: Nedozvoljen kontekst/radnja, CSRF ili MFA; reauthenticate=true traži novu prijavu
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Zapis nije dostupan
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Zastarjela verzija, preklapanje perioda ili sukob stanja
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      description: MFA acr=2 iz verifikovanog OIDC ID tokena. Samo zapisi u opsegu aktivno izabrane uloge.
+  /api/v1/admin/roles/{id}/revoke:
+    post:
+      operationId: revokeRole
+      summary: Trenutni opoziv uz čuvanje historije
+      security:
+      - webSession: []
+      parameters:
+      - $ref: '#/components/parameters/AdminContext'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeRole'
+      responses:
+        '200':
+          description: Uspješno; DTO, bez keširanja
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assignment'
+        '400':
+          description: Neispravan zahtjev
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Prijava je potrebna
+        '403':
+          description: Nedozvoljen kontekst/radnja, CSRF ili MFA; reauthenticate=true traži novu prijavu
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Zapis nije dostupan
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Zastarjela verzija, preklapanje perioda ili sukob stanja
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      description: MFA acr=2 iz verifikovanog OIDC ID tokena. Upis zahtijeva auth_time ne stariji od 5 minuta i
+        obavezan razlog.
+  /api/v1/admin/events:
+    get:
+      operationId: listAdministrationEvents
+      summary: Historija administrativnih radnji
+      security:
+      - webSession: []
+      parameters:
+      - $ref: '#/components/parameters/AdminContext'
+      - $ref: '#/components/parameters/Page'
+      responses:
+        '200':
+          description: Uspješno; DTO, bez keširanja
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdministrationEventPage'
+        '400':
+          description: Neispravan zahtjev
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Prijava je potrebna
+        '403':
+          description: Nedozvoljen kontekst/radnja, CSRF ili MFA; reauthenticate=true traži novu prijavu
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Zapis nije dostupan
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Zastarjela verzija, preklapanje perioda ili sukob stanja
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      description: MFA acr=2 iz verifikovanog OIDC ID tokena. Samo zapisi u opsegu aktivno izabrane uloge.
+  /api/v1/admin/invitations:
+    get:
+      operationId: listInvitations
+      summary: Pozivi u izabranom administrativnom opsegu
+      security:
+      - webSession: []
+      parameters:
+      - $ref: '#/components/parameters/AdminContext'
+      - $ref: '#/components/parameters/Page'
+      responses:
+        '200':
+          description: 'Uspješno, Cache-Control: no-store'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationPage'
+        '400':
+          description: Neispravni podaci
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Prijava je potrebna
+        '403':
+          description: Nedozvoljen opseg, CSRF, nepotvrđena e-pošta ili MFA; reauthenticate=true traži novu prijavu
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Poziv nije dostupan
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Sukob verzije/uloge ili nevažeće stanje poziva
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+    post:
+      operationId: createInvitation
+      summary: Kreiraj poziv i zakaži slanje
+      security:
+      - webSession: []
+      parameters:
+      - $ref: '#/components/parameters/AdminContext'
+      - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '201':
+          description: 'Uspješno, Cache-Control: no-store'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+        '400':
+          description: Neispravni podaci
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Prijava je potrebna
+        '403':
+          description: Nedozvoljen opseg, CSRF, nepotvrđena e-pošta ili MFA; reauthenticate=true traži novu prijavu
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Poziv nije dostupan
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Sukob verzije/uloge ili nevažeće stanje poziva
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInvitation'
+  /api/v1/admin/invitations/{id}/revoke:
+    post:
+      operationId: revokeInvitation
+      summary: Opozovi poziv na čekanju
+      security:
+      - webSession: []
+      parameters:
+      - $ref: '#/components/parameters/AdminContext'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: 'Uspješno, Cache-Control: no-store'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+        '400':
+          description: Neispravni podaci
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Prijava je potrebna
+        '403':
+          description: Nedozvoljen opseg, CSRF, nepotvrđena e-pošta ili MFA; reauthenticate=true traži novu prijavu
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Poziv nije dostupan
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Sukob verzije/uloge ili nevažeće stanje poziva
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeInvitation'
+  /api/v1/admin/invitations/{id}/retry:
+    post:
+      operationId: retryInvitation
+      summary: Ponovi dostavu iste veze, bez produžavanja roka
+      security:
+      - webSession: []
+      parameters:
+      - $ref: '#/components/parameters/AdminContext'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: 'Uspješno, Cache-Control: no-store'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+        '400':
+          description: Neispravni podaci
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Prijava je potrebna
+        '403':
+          description: Nedozvoljen opseg, CSRF, nepotvrđena e-pošta ili MFA; reauthenticate=true traži novu prijavu
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Poziv nije dostupan
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Sukob verzije/uloge ili nevažeće stanje poziva
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeInvitation'
+  /api/v1/invitations/preview:
+    post:
+      operationId: previewInvitation
+      summary: Pregled prije eksplicitnog prihvatanja
+      security:
+      - webSession: []
+      parameters:
+      - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: 'Uspješno, Cache-Control: no-store'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationPreview'
+        '400':
+          description: Neispravni podaci
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Prijava je potrebna
+        '403':
+          description: Nedozvoljen opseg, CSRF, nepotvrđena e-pošta ili MFA; reauthenticate=true traži novu prijavu
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Poziv nije dostupan
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Sukob verzije/uloge ili nevažeće stanje poziva
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationToken'
+      description: Verifikovani ID token mora imati acr=2, auth_time do pet minuta star i email_verified=true. Potvrđena
+        email adresa mora odgovarati pozivu. Ne prihvata identitet iz tijela ili zaglavlja.
+  /api/v1/invitations/accept:
+    post:
+      operationId: acceptInvitation
+      summary: Jednokratno prihvatanje i kreiranje dodjele
+      security:
+      - webSession: []
+      parameters:
+      - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: 'Uspješno, Cache-Control: no-store'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationAccepted'
+        '400':
+          description: Neispravni podaci
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Prijava je potrebna
+        '403':
+          description: Nedozvoljen opseg, CSRF, nepotvrđena e-pošta ili MFA; reauthenticate=true traži novu prijavu
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Poziv nije dostupan
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Sukob verzije/uloge ili nevažeće stanje poziva
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationToken'
+      description: Verifikovani ID token mora imati acr=2, auth_time do pet minuta star i email_verified=true. Potvrđena
+        email adresa mora odgovarati pozivu. Ne prihvata identitet iz tijela ili zaglavlja.
 components:
   securitySchemes:
     webSession:
@@ -73,9 +983,682 @@ components:
   schemas:
     Session:
       type: object
-      required: [subject, displayName]
+      required:
+      - subject
+      - displayName
       properties:
         subject:
           type: string
         displayName:
-          type: [string, 'null']
+          type:
+          - string
+          - 'null'
+    AccessContext:
+      type: object
+      required:
+      - id
+      - role
+      - organization
+      - validFrom
+      - validUntil
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum:
+          - SYSTEM_ADMIN
+          - MINISTRY_ANALYST
+          - FEDERATION_ANALYST
+          - ASSOCIATION_ADMIN
+          - OPERATOR
+          - WARDEN
+          - ANGLER
+        organization:
+          anyOf:
+          - $ref: '#/components/schemas/OrganizationSummary'
+          - type: 'null'
+        validFrom:
+          type: string
+          format: date-time
+        validUntil:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    OrganizationSummary:
+      type: object
+      required:
+      - id
+      - name
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+    OrganizationType:
+      type: string
+      enum:
+      - MINISTRY
+      - FEDERATION
+      - ASSOCIATION
+    Organization:
+      type: object
+      required:
+      - id
+      - version
+      - name
+      - type
+      - status
+      - contactEmail
+      - contactPhone
+      - parent
+      properties:
+        id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+        name:
+          type: string
+          minLength: 1
+          maxLength: 240
+        type:
+          $ref: '#/components/schemas/OrganizationType'
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - ARCHIVED
+        contactEmail:
+          type:
+          - string
+          - 'null'
+          maxLength: 254
+        contactPhone:
+          type:
+          - string
+          - 'null'
+          maxLength: 50
+        parent:
+          anyOf:
+          - $ref: '#/components/schemas/OrganizationSummary'
+          - type: 'null'
+    OrganizationAffiliation:
+      type: object
+      required:
+      - id
+      - parent
+      - validFrom
+      - validUntil
+      properties:
+        id:
+          type: string
+          format: uuid
+        parent:
+          $ref: '#/components/schemas/OrganizationSummary'
+        validFrom:
+          type: string
+          format: date-time
+        validUntil:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    User:
+      type: object
+      required:
+      - id
+      - version
+      - subject
+      - displayName
+      - active
+      properties:
+        id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+        subject:
+          type: string
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 240
+        active:
+          type: boolean
+    UserSummary:
+      type: object
+      required:
+      - id
+      - displayName
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 240
+    Role:
+      type: string
+      enum:
+      - SYSTEM_ADMIN
+      - MINISTRY_ANALYST
+      - FEDERATION_ANALYST
+      - ASSOCIATION_ADMIN
+      - OPERATOR
+      - WARDEN
+      - ANGLER
+    Assignment:
+      type: object
+      required:
+      - id
+      - version
+      - user
+      - organization
+      - role
+      - validFrom
+      - validUntil
+      - revokedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+        user:
+          $ref: '#/components/schemas/UserSummary'
+        organization:
+          anyOf:
+          - $ref: '#/components/schemas/OrganizationSummary'
+          - type: 'null'
+        role:
+          $ref: '#/components/schemas/Role'
+        validFrom:
+          type: string
+          format: date-time
+        validUntil:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        revokedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    AdministrationEvent:
+      type: object
+      required:
+      - id
+      - occurredAt
+      - action
+      - actor
+      - organization
+      - targetUser
+      - role
+      - reason
+      properties:
+        id:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        action:
+          type: string
+          enum:
+          - BOOTSTRAP_ADMIN
+          - ORGANIZATION_CREATED
+          - ORGANIZATION_UPDATED
+          - PARENT_CHANGED
+          - USER_CONNECTED
+          - USER_UPDATED
+          - ROLE_GRANTED
+          - ROLE_REVOKED
+          - INVITATION_CREATED
+          - INVITATION_REVOKED
+          - INVITATION_RESENT
+          - INVITATION_ACCEPTED
+        actor:
+          type: string
+        organization:
+          type:
+          - string
+          - 'null'
+        targetUser:
+          type:
+          - string
+          - 'null'
+        role:
+          anyOf:
+          - $ref: '#/components/schemas/Role'
+          - type: 'null'
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: Obavezan stvarni razlog promjene; praznine nisu dovoljne.
+    OrganizationPage:
+      type: object
+      required:
+      - items
+      - page
+      - hasNext
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/Organization'
+        page:
+          type: integer
+          minimum: 0
+        hasNext:
+          type: boolean
+    UserPage:
+      type: object
+      required:
+      - items
+      - page
+      - hasNext
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/User'
+        page:
+          type: integer
+          minimum: 0
+        hasNext:
+          type: boolean
+    AssignmentPage:
+      type: object
+      required:
+      - items
+      - page
+      - hasNext
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/Assignment'
+        page:
+          type: integer
+          minimum: 0
+        hasNext:
+          type: boolean
+    AdministrationEventPage:
+      type: object
+      required:
+      - items
+      - page
+      - hasNext
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/AdministrationEvent'
+        page:
+          type: integer
+          minimum: 0
+        hasNext:
+          type: boolean
+    CreateOrganization:
+      type: object
+      required:
+      - name
+      - type
+      - reason
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 240
+        type:
+          $ref: '#/components/schemas/OrganizationType'
+        contactEmail:
+          type:
+          - string
+          - 'null'
+          maxLength: 254
+        contactPhone:
+          type:
+          - string
+          - 'null'
+          maxLength: 50
+        parentId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: Obavezan stvarni razlog promjene; praznine nisu dovoljne.
+      description: Ministarstvo nema roditelja; Savez zahtijeva Ministarstvo, udruženje Savez.
+    UpdateOrganization:
+      type: object
+      required:
+      - version
+      - name
+      - reason
+      properties:
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+        name:
+          type: string
+          minLength: 1
+          maxLength: 240
+        contactEmail:
+          type:
+          - string
+          - 'null'
+          maxLength: 254
+        contactPhone:
+          type:
+          - string
+          - 'null'
+          maxLength: 50
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: Obavezan stvarni razlog promjene; praznine nisu dovoljne.
+    ChangeParent:
+      type: object
+      required:
+      - version
+      - parentId
+      - reason
+      properties:
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+        parentId:
+          type: string
+          format: uuid
+        effectiveFrom:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: Obavezan stvarni razlog promjene; praznine nisu dovoljne.
+      description: Prazan effectiveFrom znači odmah; budući trenutak zakazuje promjenu. Retroaktivni datum nije
+        dozvoljen.
+    UpdateUser:
+      type: object
+      required:
+      - version
+      - displayName
+      - active
+      - reason
+      properties:
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 240
+        active:
+          type: boolean
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: Obavezan stvarni razlog promjene; praznine nisu dovoljne.
+    RevokeRole:
+      type: object
+      required:
+      - version
+      - reason
+      properties:
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: Obavezan stvarni razlog promjene; praznine nisu dovoljne.
+    Problem:
+      type: object
+      required:
+      - status
+      - detail
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        reauthenticate:
+          type: boolean
+    Invitation:
+      type: object
+      required:
+      - id
+      - version
+      - email
+      - role
+      - organizationId
+      - organization
+      - createdAt
+      - expiresAt
+      - validUntil
+      - status
+      - sentAt
+      - attempts
+      - deliveryFailure
+      properties:
+        id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          minimum: 0
+        email:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/Role'
+        organizationId:
+          type: string
+          format: uuid
+        organization:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        validUntil:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        status:
+          type: string
+          enum:
+          - PENDING
+          - ACCEPTED
+          - REVOKED
+          - EXPIRED
+        sentAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        attempts:
+          type: integer
+          minimum: 0
+        deliveryFailure:
+          type:
+          - string
+          - 'null'
+          enum:
+          - DELIVERY_FAILED
+          - null
+    InvitationPage:
+      type: object
+      required:
+      - items
+      - page
+      - hasNext
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/Invitation'
+        page:
+          type: integer
+          minimum: 0
+        hasNext:
+          type: boolean
+    CreateInvitation:
+      type: object
+      required:
+      - email
+      - role
+      - organizationId
+      - reason
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        role:
+          $ref: '#/components/schemas/Role'
+        organizationId:
+          type: string
+          format: uuid
+        validUntil:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+      description: Poziv važi 48 sati; validUntil mora biti kasniji od isteka poziva. SYS poziva analitičare/administratore;
+        ADM operatera ili ribočuvara svog udruženja. Još ne dodjeljuje ulogu.
+    ChangeInvitation:
+      type: object
+      required:
+      - version
+      - reason
+      properties:
+        version:
+          type: integer
+          minimum: 0
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+    InvitationToken:
+      type: object
+      required:
+      - token
+      properties:
+        token:
+          type: string
+          writeOnly: true
+          minLength: 80
+          maxLength: 80
+          description: Tajna iz fragmenta primljene veze. Slati samo u tijelu POST zahtjeva, bez logovanja.
+    InvitationPreview:
+      type: object
+      required:
+      - role
+      - organization
+      - expiresAt
+      - validUntil
+      properties:
+        role:
+          $ref: '#/components/schemas/Role'
+        organization:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        validUntil:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    InvitationAccepted:
+      type: object
+      required:
+      - assignmentId
+      - role
+      - organization
+      properties:
+        assignmentId:
+          type: string
+          format: uuid
+        role:
+          $ref: '#/components/schemas/Role'
+        organization:
+          type: string
+  parameters:
+    AdminContext:
+      name: X-Access-Context
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: ID vlastite trenutno važeće administrativne dodjele; ne ID organizacije.
+    CsrfToken:
+      name: X-CSRF-TOKEN
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Token iz GET /api/v1/csrf; koristiti vraćeni headerName.
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 10000
+        default: 0
+    Search:
+      name: search
+      in: query
+      schema:
+        type: string
+        default: ''
+      description: Pretraga dijela naziva/imena, bez obzira na veličinu slova.

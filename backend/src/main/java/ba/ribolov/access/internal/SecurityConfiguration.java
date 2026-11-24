@@ -35,7 +35,7 @@ class SecurityConfiguration {
                 .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
-                .scope("openid", "profile").issuerUri(issuer)
+                .scope("openid", "profile", "email").issuerUri(issuer)
                 .authorizationUri(issuer + "/protocol/openid-connect/auth")
                 .tokenUri(issuer + "/protocol/openid-connect/token")
                 .jwkSetUri(issuer + "/protocol/openid-connect/certs")
@@ -61,7 +61,7 @@ class SecurityConfiguration {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .csrf(csrf -> csrf.disable()) // Only the bearer-token chain is exempt from CSRF.
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.GET, "/api/mobile/v1/session").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/mobile/v1/session", "/api/mobile/v1/access-contexts").authenticated()
                         .anyRequest().denyAll())
                 .oauth2ResourceServer(resource -> resource.jwt(Customizer.withDefaults()))
                 .build();
@@ -70,6 +70,13 @@ class SecurityConfiguration {
     @Bean
     SecurityFilterChain webSecurity(HttpSecurity http, ClientRegistrationRepository registrations,
                                    @Value("${ribolov.web-url}") String webUrl) throws Exception {
+        var authorizationRequests = new org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver(
+                registrations, "/oauth2/authorization");
+        authorizationRequests.setAuthorizationRequestCustomizer(builder -> builder.additionalParameters(parameters -> {
+            parameters.put("acr_values", "2");
+            parameters.put("claims", "{\"id_token\":{\"acr\":{\"essential\":true,\"values\":[\"2\"]}}}");
+            parameters.put("max_age", 300);
+        }));
         var loginSuccess = new SimpleUrlAuthenticationSuccessHandler(webUrl);
         loginSuccess.setAlwaysUseDefaultTargetUrl(true);
         var logoutSuccess = new OidcClientInitiatedLogoutSuccessHandler(registrations);
@@ -78,12 +85,15 @@ class SecurityConfiguration {
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/liveness",
                                 "/actuator/health/readiness", "/api/v1/csrf").permitAll()
                         .requestMatchers("/oauth2/**", "/login/**", "/error").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/session").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/session", "/api/v1/access-contexts", "/api/v1/access-contexts/{id}").authenticated()
+                        .requestMatchers("/api/v1/admin/**").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/invitations/preview", "/api/v1/invitations/accept").authenticated()
                         .anyRequest().denyAll())
                 .exceptionHandling(errors -> errors.defaultAuthenticationEntryPointFor(
                         new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
                         request -> request.getServletPath().startsWith("/api/")))
-                .oauth2Login(login -> login.successHandler(loginSuccess))
+                .oauth2Login(login -> login.successHandler(loginSuccess)
+                        .authorizationEndpoint(endpoint -> endpoint.authorizationRequestResolver(authorizationRequests)))
                 .logout(logout -> logout.logoutSuccessHandler(logoutSuccess))
                 .build();
     }

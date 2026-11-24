@@ -13,11 +13,17 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./postgres/init.sh:/docker-entrypoint-initdb.d/20-ribolov.sh:ro
+      - ./postgres/bootstrap-admin.sql:/opt/ribolov/bootstrap-admin.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ribolov_owner -d ribolov"]
       interval: 5s
       timeout: 5s
       retries: 20
+  mailpit:
+    image: axllent/mailpit:v1.34.0
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
   keycloak:
     image: quay.io/keycloak/keycloak:26.7.0
     command: ["start-dev", "--import-realm"]

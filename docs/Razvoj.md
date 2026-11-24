@@ -26,6 +26,7 @@ Postojeći `.env` ne treba prepisivati. Primjer sadrži javne lokalne lozinke; z
 | Web razvojni server | http://localhost:5173 |
 | Backend | http://localhost:8080 |
 | Keycloak | http://localhost:8180 |
+| Mailpit razvojni sandučić | http://localhost:8025; SMTP localhost:1025 |
 | PostgreSQL | localhost:5432, baza `ribolov` |
 
 Compose portovi baze i Keycloaka vezani su za lokalni računar. PostgreSQL volume čuva podatke između pokretanja. Init skripta izvršava se samo na praznom volume-u. Promjena lozinke u `.env` ne mijenja već kreirani DB račun; tada lozinke treba uskladiti u bazi.
@@ -70,14 +71,41 @@ Testni korisnik nema poslovna ovlaštenja. Nisu kreirani demo članovi, dozvole 
 
 Liveness je na `/actuator/health/liveness`, readiness na `/actuator/health/readiness`, a ukupno stanje na `/actuator/health`. Health detalji nisu javni.
 
+## Prvi administrator i MFA
+
+Prvo pokreni backend da Flyway primijeni V001–V004. U Keycloaku kreiraj ili odaberi namjenski korisnički nalog unutar realma `ribolov`; provjeri identitet osobe i kopiraj njegov **ID** iz korisničkog pregleda (OIDC `sub`). Keycloak administratorski nalog ne dobija poslovna prava u aplikaciji.
+
+Razvojni realm definiše `ribolov-browser` s lozinkom i obaveznim OTP za nivo 2. Web klijent zahtijeva `acr=2`, a backend za svaki upis traži prijavu staru najviše pet minuta. Korisniku postavi potrebnu radnju **Configure OTP**, dovrši podešavanje autentikatorske aplikacije pri prijavi i provjeri ID token preko kontrolisane razvojne dijagnostike, bez spremanja tokena u log: `acr` mora biti `2`, a `auth_time` vrijeme prijave.
+
+Ako realm već postoji, `--import-realm` ga preskače. U Keycloak administraciji primijeni tokove i konfiguracije iz `infra/keycloak/realm.json`: `ribolov-browser`, `ribolov-authentication`, `ribolov-password`, `ribolov-otp`, konfiguracije nivoa 1/2, vezivanje Browser flow-a i ACR postavke web klijenta. Sačuvaj postojeće korisnike i podatke. Zatim provjeri novu prijavu i obnovu prijave iz aplikacije. Konfiguracija se oslanja na Keycloak [step-up authentication](https://www.keycloak.org/docs/26.7.0/server_admin/#_step-up-flow); stvarni tok nije potvrđen u ograničenom lokalnom izvršnom okruženju.
+
+Za odobreni početni nalog, iz korijena projekta pokreni jednom:
+
+```powershell
+$administratorSubject = 'ZAMIJENI-ID-OM-KORISNIKA-IZ-KEYCLOAKA'
+docker compose --env-file .env -f infra/compose.yml exec -T postgres psql -U ribolov_owner -d ribolov -v "issuer=http://localhost:8180/realms/ribolov" -v "subject=$administratorSubject" -v "display_name=Administrator sistema" -f /opt/ribolov/bootstrap-admin.sql
+```
+
+Issuer mora tačno odgovarati konfigurisanom OIDC issuer-u. Skripta je montirana read-only u PostgreSQL kontejner; nije automatska init skripta. Ako je kontejner kreiran prije dodavanja mount-a, pokreni `docker compose --env-file .env -f infra/compose.yml up -d` da Compose primijeni novu konfiguraciju uz postojeći volume.
+
+Bootstrap u jednoj transakciji povezuje lokalnog korisnika, dodjeljuje `SYSTEM_ADMIN` i zapisuje audit. Odbija ponovno pokretanje ako postoji bilo koja sistemska dodjela. Nema automatskog privilegovanja prvog prijavljenog korisnika ni HTTP rute za dodjelu sistemske uloge.
+
+Nakon prijave SYS može napraviti Ministarstvo → Savez → udruženje i poslati pozive administratorima/analitičarima. ADM poziva operatera ili ribočuvara svog udruženja. Nalog i uloga povezuju se tek prihvatanjem uz potvrđenu e-poštu i MFA. Mailpit poruke su na http://localhost:8025. Podesi nove lokalne parametre i postojeći Keycloak realm prema [uputama za pozive](Pozivi_i_prijava.md).
+
 ## Automatske provjere
 
 ```powershell
 mvn verify
 npm --prefix frontend run build
+Push-Location frontend
+npx playwright install chromium
+npm run test:ui
+Pop-Location
 ```
 
-Backend testovi provjeravaju svih 11 modula, zabranu nepredviđenih zavisnosti, sesijske/mobilne rute, CSRF i audience tokena. Za ove testove nije potreban Keycloak ili PostgreSQL; koriste testne identitete i H2 uz isključene migracije. H2 nije zamjena za provjeru PostgreSQL migracija.
+Backend testovi provjeravaju svih 12 modula, zabranu nepredviđenih zavisnosti, sesijske/mobilne rute, CSRF i audience tokena. Za ove testove nije potreban Keycloak ili PostgreSQL; koriste testne identitete i H2 uz isključene migracije. H2 nije zamjena za provjeru PostgreSQL migracija.
+
+Browser scenarij koristi kontrolisane API odgovore: provjerava izbor konteksta, kreiranje organizacije, dodjelu i opoziv, CSRF, konflikt verzije, istek MFA i širinu mobilnog prikaza. Ne potvrđuje stvarnu OIDC integraciju. Po potrebi se putanja već instaliranog Chromium/Chrome preglednika zadaje kroz PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH.
 
 Web build uključuje TypeScript provjeru. Web CI trenutno koristi Windows runner, kao i početna lokalna provjera. Prije uvođenja drugih build platformi treba provjeriti da lockfile obuhvata njihove opcionalne native pakete za Vite/Rolldown; početni lockfile pripremljen je iz dostupnih Windows zavisnosti.
 
@@ -93,7 +121,7 @@ $env:IT_DATABASE_USERNAME = 'ribolov_app'
 mvn -Ppostgres-it verify
 ```
 
-Test primjenjuje stvarne migracije. Zato koristiti razvojnu/testnu bazu, ne produkcijsku. Provjerava šeme, ponovljeno izvršenje, runtime prava i zabranu kreiranja tabela. Privremene probne tabele se rollback-uju.
+Test primjenjuje stvarne migracije. Zato koristiti razvojnu/testnu bazu, ne produkcijsku. Provjerava šeme, ponovljeno izvršenje, runtime prava, JPA mapiranje, strane ključeve, preklapanja perioda, RLS i dozvoljene administrativne upise, zabranu tuđeg opsega, nepromjenjive kolone i audit, svježi MFA kontekst te rollback poslovne promjene kada audit nije ispravan. Privremene probne tabele se rollback-uju.
 
 GitHub Actions podiže zaseban PostGIS servis i pokreće ovaj profil. Lokalni obični `mvn verify` ne pokreće `*IT` testove.
 
@@ -113,18 +141,23 @@ Početni ekran ne prikuplja podatke. Unit testovi pokrivaju granice 24/72 sata, 
 
 Prije povezivanja emulatora treba urediti dostupan HTTPS OIDC issuer i backend adresu. `localhost` na emulatoru označava emulator; nije adresa razvojnog računara.
 
-## Zabilježena provjera početne osnove
+<a id="zabiljezena-provjera"></a>
+
+## Zabilježena provjera
 
 Provjera 23.11.2026. u ograničenom Windows izvršnom okruženju:
 
 | Provjera | Rezultat |
 | --- | --- |
-| Backend testovi kroz Surefire | 9 prošlo, 0 neuspješnih |
+| Backend testovi kroz Surefire | 54 prošlo, 0 neuspješnih (uključeno 17 PostgreSQL testova i dva SMTP transport testa); zbir posljednjih relevantnih pokretanja |
 | Vue/TypeScript i produkcijski bundle | Prošlo |
+| Browser administrativni scenarij | Prošlo u instaliranom Chromeu: izbor opsega, unos, poziv/opoziv, prihvatanje, CSRF, konflikt, istek MFA i mobilni prikaz |
+| Bootstrap administratora | Prošlo; drugi pokušaj očekivano odbijen |
 | `docker compose ... config --quiet` | Prošlo |
-| Potpuni Maven lifecycle | Nije potvrđen: javac pri zatvaranju arhiva prijavljuje sandbox `AccessDeniedException`; emitovane klase testirane su zasebno |
-| PostgreSQL migracije i stvarni OIDC tok | Nisu pokrenuti: pristup Docker daemonu nije dostupan |
+| Potpuni Maven lifecycle | Nije potvrđen: javac pri zatvaranju arhiva prijavljuje sandbox `AccessDeniedException`; kompilacija je prošla kroz Java Compiler API, uz odvojeno tretiranje greške zatvaranja arhiva; testovi su pokrenuti zasebno |
+| PostgreSQL migracije, JPA i RLS | Prošlo na izolovanom lokalnom PostgreSQL-u 15.1; CI cilj ostaje PostgreSQL 17 |
+| Stvarni OIDC/OTP tok | Nije provjeren: pristup Docker daemonu/Keycloaku nije dostupan |
 | Android build i testovi | Nisu završeni: AGP 8.9.2 nije u lokalnom cache-u, a preuzimanje nije dostupno |
-| GitHub Actions | Konfigurisan; izvršenje tek nakon slanja izmjena |
+| GitHub Actions | Dodana provjera stvarnog Keycloak OIDC/OTP toka; izmjene nisu poslane i rezultat nije potvrđen |
 
-Rezultat Surefire testova nije tvrdnja da je kompletan `mvn verify` prošao. Provjera prijave preko stvarnog Keycloaka i PostgreSQL integracijski test ostaju dio prve pune lokalne/CI provjere.
+Rezultat Surefire testova nije tvrdnja da je kompletan `mvn verify` prošao. Provjera prijave preko stvarnog Keycloaka i puni build ostaju za narednu kompletnu lokalnu/CI provjeru.

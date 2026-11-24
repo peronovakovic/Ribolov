@@ -28,6 +28,6 @@ class SessionController {
     @GetMapping("/api/v1/csrf")
     ResponseEntity<Map<String, String>> csrf(CsrfToken token) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-                .body(Map.of("parameterName", token.getParameterName(), "token", token.getToken()));
+                .body(Map.of("parameterName", token.getParameterName(), "headerName", token.getHeaderName(), "token", token.getToken()));
     }
 }

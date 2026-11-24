@@ -11,8 +11,9 @@ concurrency:
   cancel-in-progress: true
 jobs:
   backend:
+    needs: frontend
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     services:
       postgres:
         image: postgis/postgis:17-3.5
@@ -51,6 +52,28 @@ jobs:
         run: docker compose --env-file .env.example -f infra/compose.yml config --quiet
       - name: Verify modules, security and PostgreSQL migrations
         run: mvn --batch-mode --no-transfer-progress -Ppostgres-it verify
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: frontend/dist
+      - name: Prepare OIDC browser test
+        working-directory: frontend
+        run: |
+          npm ci --ignore-scripts
+          npx playwright install --with-deps chromium
+      - name: Start isolated Keycloak
+        run: docker run --detach --name ribolov-keycloak-ci --network host -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=ci-idp-password quay.io/keycloak/keycloak:26.7.0 start-dev --http-port=8180 --hostname=http://localhost:8180
+      - name: Verify real OIDC and OTP
+        working-directory: frontend
+        env:
+          TEST_KEYCLOAK_ADMIN_PASSWORD: ci-idp-password
+        run: npm run test:oidc
+      - name: Stop test identity provider
+        if: always()
+        run: docker stop ribolov-keycloak-ci || true
   frontend:
     runs-on: windows-latest
     timeout-minutes: 10
@@ -66,6 +89,13 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run build
+      - run: npx playwright install chromium
+      - run: npm run test:ui
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: frontend/dist
+          retention-days: 1
   android:
     runs-on: ubuntu-latest
     timeout-minutes: 25

@@ -1,12 +1,24 @@
 spring:
   datasource:
-    url: jdbc:h2:mem:ribolov;DB_CLOSE_DELAY=-1
+    url: jdbc:h2:mem:ribolov;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE
     username: sa
     password: ""
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        hbm2ddl:
+          create_namespaces: true
   flyway:
     enabled: false
 ribolov:
   web-url: http://localhost:5173/
+  database:
+    identity-context: false
   security:
     issuer: https://identity.example.test
     web-client-secret: test-only
+  invitations:
+    signing-key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+    delivery-enabled: false

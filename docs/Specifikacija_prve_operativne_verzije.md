@@ -1,6 +1,6 @@
 # Specifikacija prve operativne verzije sistema za sportski ribolov Republike Srpske
 
-Verzija 0.1 | Datum 23. novembar 2026. | Status Prijedlog za usaglašavanje
+Verzija 0.2 | Datum 23. novembar 2026. | Status Prijedlog za usaglašavanje
 
 Prva operativna verzija omogućava udruženju da vodi članstvo, evidentira uplate i izdaje dozvole, ribolovcu da preuzme svoje dokumente, ribočuvaru da obavi i evidentira kontrolu sa internetom i bez njega, a Savezu i Ministarstvu da prate jasno definisane pokazatelje. Cjelovit tok od registracije do kontrole i izvještaja predstavlja osnovu prihvatanja verzije.
 
@@ -9,6 +9,8 @@ Poslovna osnova je [RibolovniSistemRS.docx](RibolovniSistemRS.docx), posebno pog
 Izrazi „mora“ i „ne smije“ određuju ponašanje predložene verzije. Nakon usaglašavanja, odobrena verzija dokumenta postaje osnova za implementaciju i prihvatanje. Promjene obuhvata, finansijskih pravila ili offline režima zahtijevaju novu verziju specifikacije i pregled povezanih kriterija prihvatanja.
 
 Za poslovni pregled prvo pročitati poglavlja 1–4 i 20; za implementaciju procese iz poglavlja 5–12, model i ugovore iz 13–14; za testiranje koristiti poglavlja 15–18. Poglavlje 19 povezuje zahtjeve s izvornim konceptom i redoslijedom razvoja. Oznake zahtjeva, odluka i kriterija ostaju stabilne pri narednim revizijama.
+
+Dopuna 23.11.2026: po zahtjevu korisnika poslovna kolona `code`/šifra se ne uvodi. Veze lokalnih entiteta implementiraju se stvarnim JPA relacijama i stranim ključevima, bez povezivanja preko kodova ili naziva. Tehnički identifikatori u API-ju i identitet vanjskog OIDC sistema nisu poslovne šifre.
 
 ## 1 Cilj i granice prve verzije
 
@@ -137,7 +139,7 @@ Konkretne cijene, kategorije dozvola, nadležnosti nad vodama, dozvoljene vrste 
 
 ## 5 Organizacije i početno postavljanje
 
-**ORG-01** Organizacija ima identifikator, tip, naziv, šifru, kontakt, status i vremenski važeću vezu s nadređenom organizacijom. U istom trenutku udruženje pripada jednom Savezu. Ciklusi i nevažeće kombinacije tipova nisu dozvoljeni.
+**ORG-01** Organizacija ima identifikator, tip, naziv, kontakt, status i vremenski važeću vezu s nadređenom organizacijom. U istom trenutku udruženje pripada jednom Savezu. Ciklusi i nevažeće kombinacije tipova nisu dozvoljeni.
 
 **ORG-02** SYS otvara organizaciju i prvog ADM korisnika na osnovu potvrđenog zahtjeva. ADM unosi kontakt, radno vrijeme, instrukcije za uplatu i službenike. Područje i period upravljanja unosi SYS po potvrđenoj evidenciji nadležnosti; ADM ne može sam sebi dodijeliti tuđe područje.
 
@@ -200,7 +202,7 @@ Istek i buduće važenje izvedeni su iz datuma, a ne ručno promjenjivi statusi.
 
 ### 8.1 Registar i granice
 
-**POD-01** Voda ima naziv, alternativne nazive i tip, npr. rijeka ili jezero. Područje ima šifru, naziv, geometriju granice, opis pristupa i veze s jednom ili više voda. Revir pripada jednom području i ima vlastitu granicu. Jedna voda može prolaziti kroz više područja različitih udruženja.
+**POD-01** Voda ima naziv, alternativne nazive i tip, npr. rijeka ili jezero. Područje ima naziv, geometriju granice, opis pristupa i veze s jednom ili više voda. Revir pripada jednom području i ima vlastitu granicu. Jedna voda može prolaziti kroz više područja različitih udruženja.
 
 **POD-02** SYS evidentira vremenski određenu nadležnost udruženja nad područjem iz potvrđenog ulaznog dokumenta. ADM održava sadržaj vlastitog područja. Neobjavljena područja nisu javno vidljiva i ne mogu se koristiti za novi proizvod dozvole. Geometrija se unosi ili uvozi uz validaciju i pregled na karti; neispravni poligoni se odbijaju.
 
@@ -220,7 +222,7 @@ Istek i buduće važenje izvedeni su iz datuma, a ne ručno promjenjivi statusi.
 
 ### 9.1 Proizvod i cijena
 
-**DOZ-01** Verzija proizvoda ima izdavaoca, šifru, naziv, namjenu STANDARDNA ili TURISTIČKA, uslov članstva, cijenu, period prodaje, način trajanja, fiksni skup područja ili revira i povezanu verziju uslova. Obuhvat mora biti unutar važeće nadležnosti izdavaoca za cijeli period ponuđenog važenja.
+**DOZ-01** Verzija proizvoda ima izdavaoca, naziv, namjenu STANDARDNA ili TURISTIČKA, uslov članstva, cijenu, period prodaje, način trajanja, fiksni skup područja ili revira i povezanu verziju uslova. Obuhvat mora biti unutar važeće nadležnosti izdavaoca za cijeli period ponuđenog važenja.
 
 **DOZ-02** Podržana trajanja su jedan kalendarski dan, izabrani raspon kalendarskih datuma s ograničenjem maksimalnog broja dana i kalendarska godina. Za raspon se krajnji datum u interfejsu prikazuje kao uključen, a čuva se kraj narednog lokalnog dana. Ako izabrani početni datum već traje, konačni početak je trenutak izdavanja; budući datum počinje u lokalnu ponoć. Godišnja dozvola kupljena tokom godine počinje trenutkom izdavanja i završava početkom naredne godine. Nema retroaktivnog važenja; zahtjev za završeni period se odbija.
 
@@ -363,7 +365,7 @@ Model je logički i ne propisuje konkretan programski jezik ili bazu. Svi poslov
 
 | Entitet | Ključni podaci i veze |
 | --- | --- |
-| Organizacija | Tip, naziv, šifra, status, kontakt |
+| Organizacija | Tip, naziv, status, kontakt |
 | Organizaciona veza | Nadređena i podređena organizacija, početak i kraj važenja |
 | Osoba | Identitet, datum rođenja, država prebivališta, kontakt, status provjere, kanonski identitet |
 | Provjera identiteta | Osoba, način, operater, vrijeme, potvrđena fotografija kada postoji |
@@ -521,7 +523,7 @@ Brojčane vrijednosti su predloženi ciljevi za ODL-11. Testovi koriste sinteti�
 
 **UVO-01** Osnovni uvoz prihvata dogovoreni UTF-8 CSV obrazac za osobe i članstva. Obavezne kolone su izvorni ključ reda, udruženje, ime, prezime, datum rođenja, period i kategorija članstva. Kontakt i država prebivališta mogu nedostajati u istorijskim podacima, uz vidljivu oznaku kvaliteta. Nepotvrđeni identitet ne postaje potvrđen samo zato što je uvezen.
 
-**UVO-02** Uvoz prvo radi probnu validaciju bez poslovnog upisa. Izvještaj sadrži ispravne redove, greške, moguće duplikate, preklapanja i nepoznate šifre. Nema tihog preskakanja redova ili automatskog spajanja osoba. ADM potvrđuje konkretan očišćen paket; neispravni redovi se ispravljaju prije potvrde tog paketa.
+**UVO-02** Uvoz prvo radi probnu validaciju bez poslovnog upisa. Izvještaj sadrži ispravne redove, greške, moguće duplikate, preklapanja i nepoznate reference. Nema tihog preskakanja redova ili automatskog spajanja osoba. ADM potvrđuje konkretan očišćen paket; neispravni redovi se ispravljaju prije potvrde tog paketa.
 
 **UVO-03** Hash datoteke i izvorni ključ sprečavaju ponovni uvoz istog paketa i reda. Potvrđeni paket ima izvještaj rezultata i audit. Poništavanje paketa dopušteno je samo dok zapisi nisu korišteni u izdavanju ili drugim procesima; kasnije se rade pojedinačne kontrolisane korekcije.
 

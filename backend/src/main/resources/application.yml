@@ -7,6 +7,14 @@ spring:
     url: ${DATABASE_URL}
     username: ${DATABASE_USERNAME}
     password: ${DATABASE_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
   flyway:
     url: ${DATABASE_URL}
     user: ${MIGRATION_USERNAME}
@@ -38,3 +46,13 @@ ribolov:
   security:
     issuer: ${OIDC_ISSUER}
     web-client-secret: ${OIDC_WEB_SECRET}
+  invitations:
+    signing-key: ${INVITATION_SIGNING_KEY:}
+    delivery-enabled: ${INVITATION_DELIVERY_ENABLED:false}
+  mail:
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:1025}
+    from: ${SMTP_FROM:noreply@ribolov.local}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    starttls: ${SMTP_STARTTLS:true}
