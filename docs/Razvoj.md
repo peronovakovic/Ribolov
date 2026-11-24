@@ -77,7 +77,9 @@ Prvo pokreni backend da Flyway primijeni V001–V004. U Keycloaku kreiraj ili od
 
 Razvojni realm definiše `ribolov-browser` s lozinkom i obaveznim OTP za nivo 2. Web klijent zahtijeva `acr=2`, a backend za svaki upis traži prijavu staru najviše pet minuta. Korisniku postavi potrebnu radnju **Configure OTP**, dovrši podešavanje autentikatorske aplikacije pri prijavi i provjeri ID token preko kontrolisane razvojne dijagnostike, bez spremanja tokena u log: `acr` mora biti `2`, a `auth_time` vrijeme prijave.
 
-Ako realm već postoji, `--import-realm` ga preskače. U Keycloak administraciji primijeni tokove i konfiguracije iz `infra/keycloak/realm.json`: `ribolov-browser`, `ribolov-authentication`, `ribolov-password`, `ribolov-otp`, konfiguracije nivoa 1/2, vezivanje Browser flow-a i ACR postavke web klijenta. Sačuvaj postojeće korisnike i podatke. Zatim provjeri novu prijavu i obnovu prijave iz aplikacije. Konfiguracija se oslanja na Keycloak [step-up authentication](https://www.keycloak.org/docs/26.7.0/server_admin/#_step-up-flow); stvarni tok nije potvrđen u ograničenom lokalnom izvršnom okruženju.
+Ako realm već postoji, `--import-realm` ga preskače. U Keycloak administraciji primijeni tokove i konfiguracije iz `infra/keycloak/realm.json`: `ribolov-browser`, `ribolov-authentication`, `ribolov-password`, `ribolov-otp`, konfiguracije nivoa 1/2, vezivanje Browser flow-a i ACR postavke web klijenta. Sačuvaj postojeće korisnike i podatke. Zatim provjeri novu prijavu i obnovu prijave iz aplikacije. Konfiguracija se oslanja na Keycloak [step-up authentication](https://www.keycloak.org/docs/26.7.0/server_admin/#_step-up-flow); stvarni tok potvrđen je u CI-ju 24.11.2026. prema rezultatu na kraju ovog vodiča.
+
+Web klijentu `ribolov-web` među podrazumijevane client scope-ove dodaj i `basic`; on u Keycloaku 26.7 daje `auth_time`. Novi realm dobija ovu postavku iz JSON-a, a postojeći treba ažurirati kroz **Clients → ribolov-web → Client scopes**. Nakon promjene ponovi prijavu. Bez potpisanog `auth_time` backend odbija privilegovane upise i pozive, iako je OTP unesen.
 
 Za odobreni početni nalog, iz korijena projekta pokreni jednom:
 
@@ -145,19 +147,20 @@ Prije povezivanja emulatora treba urediti dostupan HTTPS OIDC issuer i backend a
 
 ## Zabilježena provjera
 
-Provjera 23.11.2026. u ograničenom Windows izvršnom okruženju:
+[GitHub Actions provjera od 24.11.2026.](https://github.com/peronovakovic/Ribolov/actions/runs/45369955061), commit `a0c7fbb`:
 
 | Provjera | Rezultat |
 | --- | --- |
-| Backend testovi kroz Surefire | 54 prošlo, 0 neuspješnih (uključeno 17 PostgreSQL testova i dva SMTP transport testa); zbir posljednjih relevantnih pokretanja |
+| Puni `mvn -Ppostgres-it verify` | Prošlo: 38 testova + 17 PostgreSQL integracijskih testova, ukupno 55, bez grešaka |
+| PostgreSQL migracije, JPA i RLS | Prošlo na PostgreSQL-u 17.5/PostGIS-u, s odvojenim migracijskim i runtime računima |
 | Vue/TypeScript i produkcijski bundle | Prošlo |
-| Browser administrativni scenarij | Prošlo u instaliranom Chromeu: izbor opsega, unos, poziv/opoziv, prihvatanje, CSRF, konflikt, istek MFA i mobilni prikaz |
-| Bootstrap administratora | Prošlo; drugi pokušaj očekivano odbijen |
-| `docker compose ... config --quiet` | Prošlo |
-| Potpuni Maven lifecycle | Nije potvrđen: javac pri zatvaranju arhiva prijavljuje sandbox `AccessDeniedException`; kompilacija je prošla kroz Java Compiler API, uz odvojeno tretiranje greške zatvaranja arhiva; testovi su pokrenuti zasebno |
-| PostgreSQL migracije, JPA i RLS | Prošlo na izolovanom lokalnom PostgreSQL-u 15.1; CI cilj ostaje PostgreSQL 17 |
-| Stvarni OIDC/OTP tok | Nije provjeren: pristup Docker daemonu/Keycloaku nije dostupan |
-| Android build i testovi | Nisu završeni: AGP 8.9.2 nije u lokalnom cache-u, a preuzimanje nije dostupno |
-| GitHub Actions | Dodana provjera stvarnog Keycloak OIDC/OTP toka; izmjene nisu poslane i rezultat nije potvrđen |
+| Browser administrativni scenarij | Prošlo: konteksti, organizacije, pozivi, prihvatanje, CSRF, konflikti, istek MFA i mobilni prikaz |
+| Stvarni OIDC/OTP tok | Prošlo na Keycloaku 26.7: OTP podešavanje, prijava, svježi potpisani MFA/email podaci, obnova, CSRF, odsustvo automatskih uloga i odjava |
+| Android | Prošli `testDebugUnitTest` i `assembleDebug` |
+| Compose konfiguracija | Prošlo |
 
-Rezultat Surefire testova nije tvrdnja da je kompletan `mvn verify` prošao. Provjera prijave preko stvarnog Keycloaka i puni build ostaju za narednu kompletnu lokalnu/CI provjeru.
+Android CI eksplicitno instalira `platform-tools`, `platforms;android-35` i `build-tools;35.0.0`, jer stari podrazumijevani paket `tools` više nije dostupan. [Upute setup-android](https://github.com/android-actions/setup-android#readme).
+
+Lokalno ograničeno Windows okruženje i dalje ne može pristupiti Docker daemonu, a puni Maven lifecycle nailazi na zabranu zatvaranja javac arhiva. Raniji odvojeni lokalni testovi i PostgreSQL 15.1 provjera nisu zamjena za gore navedeni puni CI rezultat. Dodatno je lokalno prošlo svih 10 sigurnosnih testova, uključujući izdavanje stvarnog CSRF tokena i slanje zaštićenog zahtjeva s njim.
+
+OIDC test koristi testnog korisnika s unaprijed potvrđenom adresom. Samostalna registracija i klik na Keycloak verifikacijsku e-poruku još nisu obuhvaćeni tim testom. CI ne potvrđuje spremnost kompletne operativne verzije: osobe, članstvo, dozvole, naplata i teren još slijede.
